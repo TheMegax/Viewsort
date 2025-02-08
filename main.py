@@ -12,17 +12,17 @@ from datetime import timedelta
 from sqlite3 import Connection
 
 from TikTokApi.exceptions import InvalidResponseException
-from proxygetter import ProxyManager
 
 from TikTokApi import TikTokApi
 from TikTokApi.api.video import Video
+
+import website
 
 MAX_VIDEO_AGE_HOURS = 720
 UPDATE_RATE_HOURS = 8
 
 ms_token = os.environ.get("ms_token", None)
 
-manager = ProxyManager()
 logger = logging.getLogger("TiktokViewer")
 
 logging.basicConfig(
@@ -42,7 +42,7 @@ args = parser.parse_args()
 
 class DatabaseTables:
     @staticmethod
-    async def get_connection() -> Connection:
+    async def get_connection() -> Connection | None:
         try:
             with sqlite3.connect("viewsort.db") as conn:
                 return conn
@@ -57,7 +57,8 @@ class DatabaseTables:
                     likes INTEGER NOT NULL, 
                     create_date INTEGER NOT NULL,
                     update_date INTEGER NOT NULL,
-                    url TEXT NOT NULL
+                    url TEXT NOT NULL,
+                    cover TEXT NOT NULL
             );"""
         ]
         conn = await self.get_connection()
@@ -75,7 +76,7 @@ class DatabaseTables:
     async def get_tiktok_top_liked_videos(self, limit: int = 50, offset: int = 0):
         conn = await self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url FROM tiktok_videos
+        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url, cover FROM tiktok_videos
                             ORDER BY likes DESC
                             LIMIT ? OFFSET ?;""",
                        (limit, offset))
@@ -83,59 +84,61 @@ class DatabaseTables:
         data = []
         for d in fetch:
             data.append(
-                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5]})
+                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5], 'cover': d[6]})
         return data
 
     async def get_tiktok_random_videos(self, limit: int = 50):
         conn = await self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url FROM tiktok_videos
+        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url, cover FROM tiktok_videos
                             ORDER BY RANDOM() LIMIT ?;""",
                        (limit,))
         fetch = cursor.fetchall()
         data = []
         for d in fetch:
             data.append(
-                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5]})
+                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5], 'cover': d[6]})
         return data
 
     async def get_outdated_videos(self):
         epoch = int(time.time())
         conn = await self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url FROM tiktok_videos
+        cursor.execute("""  SELECT id, views, likes, create_date, update_date, url, cover FROM tiktok_videos
                             WHERE update_date < ? - ?
-                            ORDER BY update_date ASC;""",
+                            ORDER BY update_date;""",
                        (epoch, MAX_VIDEO_AGE_HOURS * 60 * 60))
         fetch = cursor.fetchall()
         data = []
         for d in fetch:
             data.append(
-                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5]})
+                {'id': d[0], 'views': d[1], 'likes': d[2], 'create_date': d[3], 'update_date': d[4], 'url': d[5], 'cover': d[6]})
         return data
 
     async def get_tiktok_video(self, video_id: int) -> dict | None:
         conn = await self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""SELECT id, views, likes, create_date, update_date, url FROM tiktok_videos WHERE id=?;""",
+        cursor.execute("""SELECT id, views, likes, create_date, update_date, url, cover FROM tiktok_videos WHERE id=?;""",
                        (video_id,))
         data = cursor.fetchone()
         if data is None:
             return None
         return {'id': data[0], 'views': data[1], 'likes': data[2], 'create_date': data[3], 'update_date': data[4],
-                'url': data[5]}
+                'url': data[5], 'cover': data[6]}
 
     async def insert_tiktok_video(self, video_id: int, views: int, likes: int,
-                                  create_date: dt.datetime, update_date: dt.datetime, url: str):
+                                  create_date: dt.datetime, update_date: dt.datetime, url: str, cover: str):
         conn = await self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("""INSERT INTO tiktok_videos(id, views, likes, create_date, update_date, url) VALUES(?,?,?,?,?,?)
+        cursor.execute("""INSERT INTO tiktok_videos(id, views, likes, create_date, update_date, url, cover) VALUES(?,?,?,?,?,?,?)
                         ON CONFLICT(id) DO UPDATE SET
                         views=excluded.views,
                         likes=excluded.likes, 
                         create_date=excluded.create_date,
-                        update_date=excluded.update_date;""",
-                       (video_id, views, likes, int(create_date.timestamp()), int(update_date.timestamp()), url))
+                        update_date=excluded.update_date,
+                        url=excluded.url,
+                        cover=excluded.cover;""",
+                       (video_id, views, likes, int(create_date.timestamp()), int(update_date.timestamp()), url, cover))
         conn.commit()
 
     async def remove_old_tiktok_videos(self):
@@ -182,6 +185,7 @@ class TikTokCrawler:
                 likes = int(related_video.stats['diggCount'])
                 views = int(related_video.stats['playCount'])
                 url = related_video.url
+                cover = related_video.as_dict['video']['cover']
                 if url is None:
                     user = related_video.author.username
                     url = f"https://www.tiktok.com/@{user}/video/{video_id}"
@@ -198,8 +202,7 @@ class TikTokCrawler:
 
                     logger.info(f"Tiktok Videos [ Total: {self.videos_total + self.videos_added},"
                                 f" Added: {self.videos_added}, Updated: {self.videos_updated} ]")
-
-                    await self.database_tables.insert_tiktok_video(video_id, views, likes, date, today, url)
+                    await self.database_tables.insert_tiktok_video(video_id, views, likes, date, today, url, cover)
                     if stored_video is not None and depth + 1 < max_depth:
                         related_videos = []
                         async for subrelated_video in related_video.related_videos():
@@ -253,22 +256,10 @@ async def main():
     await dbt.create_tables()
     logger.info("Created tables")
 
-    proxies = []
-    """
-    // Note: This isn't working at the moment. Any and all proxies refuse to connect to tiktok.
-    
-    logger.info("Getting proxies...")
-    proxies_raw = manager.get_proxies(https=True, google=True, last_checked_max=600,
-                                      filter_validity_url="www.tiktok.com")
-    for proxy in proxies_raw:
-        proxies.append({'server': f"{proxy.ip}:{proxy.port}"})
-        logger.info(f">> Using proxy with ip {proxy.ip}:{proxy.port}")
-    logger.info("Got all proxies to scrap")
-    """
-
     async with TikTokApi() as api:
-        await api.create_sessions(ms_tokens=[ms_token], num_sessions=5, proxies=proxies,
-                                  sleep_after=3, browser="webkit", suppress_resource_load_types=['image', 'media'])
+        logger.info("Loading sessions. Please wait...")
+        await api.create_sessions(ms_tokens=[ms_token], num_sessions=5, sleep_after=3, browser="chromium",
+                                  suppress_resource_load_types=['image', 'media'])
 
         logger.info("Started new user sessions")
 
@@ -293,7 +284,11 @@ async def main():
                 async for video in api.trending.videos(count=30):
                     init_videos.append(video)
 
-            logger.info("Got initial videos to crawl")
+            if len(init_videos) == 0:
+                logger.info("No initial videos, trying again...")
+                continue
+
+            logger.info(f"Got initial videos to crawl ({len(init_videos)})")
 
             # Starting the crawler
             crawler = TikTokCrawler()
@@ -322,4 +317,8 @@ if __name__ == "__main__":
     if args.top:
         asyncio.run(args_get_top())
     else:
-        asyncio.run(main())
+        asyncio.ensure_future(main())
+        asyncio.ensure_future(website.run_website())
+
+        loop = asyncio.get_event_loop()
+        loop.run_forever()
