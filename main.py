@@ -321,6 +321,7 @@ async def args_get_top():
 
 
 if __name__ == "__main__":
+    print("BOT STARTED")
     if args.top:
         asyncio.run(args_get_top())
     else:
