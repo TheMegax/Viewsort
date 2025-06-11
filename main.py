@@ -178,7 +178,7 @@ class TikTokCrawler:
             try:
                 async for related_video in video.related_videos():
                     related_videos.append(related_video)
-            except InvalidResponseException | EmptyResponseException:
+            except (InvalidResponseException | EmptyResponseException):
                 logger.warning(f"Invalid response for video {video.id}, skipping...")
                 continue
 
