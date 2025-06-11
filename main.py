@@ -177,7 +177,8 @@ class TikTokCrawler:
             related_videos = []
             try:
                 async for related_video in video.related_videos():
-                    related_videos.append(related_video)
+                    if related_video.id:
+                        related_videos.append(related_video)
             except (EmptyResponseException, InvalidResponseException):
                 logger.warning(f"Invalid response for video {video.id}, skipping...")
                 continue
@@ -293,7 +294,8 @@ async def main():
             else:
                 logger.info("Loading initial videos from trending...")
                 async for video in api.trending.videos(count=30):
-                    init_videos.append(video)
+                    if video.id:
+                        init_videos.append(video)
 
             if len(init_videos) == 0:
                 logger.info("No initial videos, trying again... (5 seconds)")
