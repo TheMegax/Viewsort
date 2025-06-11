@@ -175,8 +175,12 @@ class TikTokCrawler:
     async def crawl_videos(self, videos: list[Video], max_depth=100, depth=0):
         for video in videos:
             related_videos = []
-            async for related_video in video.related_videos():
-                related_videos.append(related_video)
+            try:
+                async for related_video in video.related_videos():
+                    related_videos.append(related_video)
+            except InvalidResponseException:
+                logger.warning(f"Invalid response for video {video.id}, skipping...")
+                continue
 
             for related_video in related_videos:
                 video_id = int(related_video.id)
