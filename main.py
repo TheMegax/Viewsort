@@ -265,7 +265,7 @@ async def main():
     async with TikTokApi() as api:
         logger.info("Loading sessions. Please wait...")
         # (firefox, chromium, webkit)
-        await api.create_sessions(ms_tokens=[ms_token], num_sessions=5, sleep_after=5, browser="webkit",
+        await api.create_sessions(ms_tokens=[ms_token], num_sessions=5, sleep_after=5, browser="chromium",
                                   override_browser_args=['--no-sandbox'])
 
         logger.info("Started new user sessions")
