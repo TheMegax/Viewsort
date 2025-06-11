@@ -12,7 +12,7 @@ from asyncio import sleep
 from datetime import timedelta
 from sqlite3 import Connection
 
-from TikTokApi.exceptions import InvalidResponseException
+from TikTokApi.exceptions import InvalidResponseException, EmptyResponseException
 
 from TikTokApi import TikTokApi
 from TikTokApi.api.video import Video
@@ -178,7 +178,7 @@ class TikTokCrawler:
             try:
                 async for related_video in video.related_videos():
                     related_videos.append(related_video)
-            except InvalidResponseException:
+            except InvalidResponseException | EmptyResponseException:
                 logger.warning(f"Invalid response for video {video.id}, skipping...")
                 continue
 
